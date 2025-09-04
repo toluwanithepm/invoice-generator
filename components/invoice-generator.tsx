@@ -13,9 +13,9 @@ const generateInvoiceNumber = () => {
 
 const businessInfo = {
   name: "Glam Up With Feyi",
-  email: "hello@glamtales.ng",
-  phone: "+234 813 456 7890",
-  instagram: "@glamtales_ng",
+  email: "feyisaraabodunrin@gmail.com",
+  phone: "+234 813 100 3292",
+  instagram: "@feyi_shara_",
 }
 
 export default function InvoiceGenerator() {
@@ -29,7 +29,7 @@ export default function InvoiceGenerator() {
     items: [{ description: "", quantity: 1, price: 0 }] as Item[],
     taxRate: 0,
     notes: "", // Notes field already exists in state
-    paymentTerms: "Payment due within 14 days",
+    paymentTerms: "Payment due within 7 days",
   })
 
   useEffect(() => {
@@ -77,117 +77,463 @@ export default function InvoiceGenerator() {
 
   const exportToPNG = async () => {
     try {
-      console.log("[v0] Starting PNG export...")
-      const html2canvas = (await import("html2canvas")).default
-      console.log("[v0] html2canvas loaded successfully")
+      console.log("[v0] Starting PNG export using direct canvas drawing...")
 
       if (!invoiceRef.current) {
-        console.log("[v0] Invoice ref not found")
         alert("Invoice preview not found")
         return
       }
 
-      console.log("[v0] Capturing element with html2canvas...")
-      const canvas = await html2canvas(invoiceRef.current, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        allowTaint: false,
-        foreignObjectRendering: false,
-        logging: true, // Enable logging for debugging
-        width: invoiceRef.current.scrollWidth,
-        height: invoiceRef.current.scrollHeight,
-        scrollX: 0,
-        scrollY: 0,
-      })
+      const canvas = document.createElement("canvas")
+      const ctx = canvas.getContext("2d")
+      if (!ctx) {
+        throw new Error("Could not get canvas context")
+      }
 
-      console.log("[v0] Canvas created successfully, size:", canvas.width, "x", canvas.height)
+      // Set canvas size for high quality
+      canvas.width = 800
+      canvas.height = 1100
 
-      const dataURL = canvas.toDataURL("image/png", 1.0)
-      console.log("[v0] Data URL created, length:", dataURL.length)
+      drawInvoiceOnCanvas(ctx, canvas.width, canvas.height)
 
-      const link = document.createElement("a")
-      link.download = `Glam-Up-With-Feyi-Invoice-${invoiceData.invoiceNumber}.png`
-      link.href = dataURL
-      document.body.appendChild(link)
-      console.log("[v0] Triggering download...")
-      link.click()
-      document.body.removeChild(link)
-      console.log("[v0] PNG export completed successfully")
+      // Convert to PNG and download
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            const url = URL.createObjectURL(blob)
+            const link = document.createElement("a")
+            link.download = `Glam-Up-With-Feyi-Invoice-${invoiceData.invoiceNumber}.png`
+            link.href = url
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+            URL.revokeObjectURL(url)
+            console.log("[v0] PNG export completed successfully")
+          }
+        },
+        "image/png",
+        1.0,
+      )
     } catch (err) {
       console.error("[v0] PNG export error:", err)
       alert(`PNG export failed: ${err instanceof Error ? err.message : "Unknown error"}`)
     }
   }
 
-  const exportToPDF = async () => {
+  const exportToPDF = () => {
     try {
-      console.log("[v0] Starting PDF export...")
-      const html2canvas = (await import("html2canvas")).default
-      console.log("[v0] html2canvas loaded successfully")
+      console.log("[v0] Starting PDF export with exact preview styling...")
 
-      const jsPDFModule = await import("jspdf")
-      const jsPDF = jsPDFModule.jsPDF || jsPDFModule.default
-      console.log("[v0] jsPDF loaded successfully")
-
-      if (!invoiceRef.current) {
-        console.log("[v0] Invoice ref not found")
-        alert("Invoice preview not found")
+      // Create a new window with the invoice content
+      const printWindow = window.open("", "_blank")
+      if (!printWindow) {
+        alert("Please allow popups to export PDF")
         return
       }
 
-      console.log("[v0] Capturing element with html2canvas...")
-      const canvas = await html2canvas(invoiceRef.current, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        allowTaint: false,
-        foreignObjectRendering: false,
-        logging: true, // Enable logging for debugging
-        width: invoiceRef.current.scrollWidth,
-        height: invoiceRef.current.scrollHeight,
-        scrollX: 0,
-        scrollY: 0,
-      })
+      const invoiceContent = invoiceRef.current?.innerHTML || ""
 
-      console.log("[v0] Canvas created successfully, size:", canvas.width, "x", canvas.height)
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Invoice ${invoiceData.invoiceNumber}</title>
+          <style>
+            * { 
+              margin: 0; 
+              padding: 0; 
+              box-sizing: border-box; 
+            }
+            body { 
+              font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+              line-height: 1.5; 
+              color: #111827;
+              background: white;
+              font-size: 14px;
+            }
+            @media print {
+              body { margin: 0; }
+              .no-print { display: none !important; }
+            }
+            @page { 
+              margin: 0.75in; 
+              size: A4;
+            }
+            
+            /* Exact styling to match web preview */
+            .p-6 { padding: 1.5rem; }
+            .mb-8 { margin-bottom: 2rem; }
+            .mb-6 { margin-bottom: 1.5rem; }
+            .mb-4 { margin-bottom: 1rem; }
+            .mb-3 { margin-bottom: 0.75rem; }
+            .mb-2 { margin-bottom: 0.5rem; }
+            .mb-1 { margin-bottom: 0.25rem; }
+            .mt-12 { margin-top: 3rem; }
+            .pt-6 { padding-top: 1.5rem; }
+            .pt-2 { padding-top: 0.5rem; }
+            .p-4 { padding: 1rem; }
+            
+            /* Layout */
+            .flex { display: flex; }
+            .justify-between { justify-content: space-between; }
+            .justify-end { justify-content: flex-end; }
+            .items-start { align-items: flex-start; }
+            .items-center { align-items: center; }
+            .text-right { text-align: right; }
+            .text-center { text-align: center; }
+            .gap-2 { gap: 0.5rem; }
+            .space-y-1 > * + * { margin-top: 0.25rem; }
+            .space-y-2 > * + * { margin-top: 0.5rem; }
+            
+            /* Typography */
+            .text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
+            .text-2xl { font-size: 1.5rem; line-height: 2rem; }
+            .text-xl { font-size: 1.25rem; line-height: 1.75rem; }
+            .text-lg { font-size: 1.125rem; line-height: 1.75rem; }
+            .text-base { font-size: 1rem; line-height: 1.5rem; }
+            .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+            .text-xs { font-size: 0.75rem; line-height: 1rem; }
+            .font-bold { font-weight: 700; }
+            .font-semibold { font-weight: 600; }
+            .font-medium { font-weight: 500; }
+            
+            /* Colors - exact matches */
+            h1 { color: #78350f !important; }
+            h2 { color: #78350f !important; }
+            .text-gray-900 { color: #111827; }
+            .text-gray-700 { color: #374151; }
+            .text-gray-600 { color: #4b5563; }
+            .text-gray-500 { color: #6b7280; }
+            
+            /* Backgrounds and borders */
+            .bg-gray-50 { background-color: #f9fafb; }
+            .bg-white { background-color: white; }
+            .rounded-lg { border-radius: 0.5rem; }
+            .border { border: 1px solid #e5e7eb; }
+            .border-t { border-top: 1px solid #e5e7eb; }
+            .border-b { border-bottom: 1px solid #e5e7eb; }
+            .border-gray-100 { border-color: #f3f4f6; }
+            .border-gray-200 { border-color: #e5e7eb; }
+            .border-gray-300 { border-color: #d1d5db; }
+            
+            /* Invoice specific styling */
+            [style*="background-color: rgb(254, 243, 199)"] { 
+              background-color: #fef3c7 !important; 
+            }
+            [style*="border-color: rgb(252, 211, 77)"] { 
+              border-color: #fcd34d !important; 
+            }
+            [style*="color: rgb(120, 53, 15)"] { 
+              color: #78350f !important; 
+            }
+            [style*="color: rgb(146, 64, 14)"] { 
+              color: #92400e !important; 
+            }
+            
+            /* Table styling */
+            table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin-bottom: 1.5rem;
+            }
+            th, td { 
+              padding: 0.75rem; 
+              text-align: left; 
+              border-bottom: 1px solid #f3f4f6; 
+              vertical-align: top;
+            }
+            th { 
+              font-weight: 600; 
+              color: #374151; 
+            }
+            tbody tr:nth-child(odd) {
+              border-bottom: 1px solid #f3f4f6;
+            }
+            
+            /* Max width for totals */
+            .max-w-xs { max-width: 20rem; }
+            .w-full { width: 100%; }
+            
+            /* Icons - hide in print */
+            svg { display: none; }
+            
+            /* Whitespace handling */
+            .whitespace-pre-wrap { white-space: pre-wrap; }
+          </style>
+        </head>
+        <body>
+          <div class="p-6 bg-white">
+            ${invoiceContent}
+          </div>
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+                setTimeout(function() {
+                  window.close();
+                }, 1000);
+              }, 500);
+            }
+          </script>
+        </body>
+        </html>
+      `)
 
-      const imgData = canvas.toDataURL("image/png", 1.0)
-      console.log("[v0] Image data created, length:", imgData.length)
-
-      const pdf = new jsPDF("p", "mm", "a4")
-      console.log("[v0] PDF instance created")
-
-      const pdfWidth = pdf.internal.pageSize.getWidth()
-      const pdfHeight = pdf.internal.pageSize.getHeight()
-      const imgWidth = canvas.width
-      const imgHeight = canvas.height
-
-      console.log("[v0] PDF dimensions:", pdfWidth, "x", pdfHeight)
-      console.log("[v0] Image dimensions:", imgWidth, "x", imgHeight)
-
-      // Calculate scaling to fit the image on the PDF page
-      const ratio = Math.min(pdfWidth / (imgWidth * 0.264583), pdfHeight / (imgHeight * 0.264583))
-      const scaledWidth = imgWidth * 0.264583 * ratio
-      const scaledHeight = imgHeight * 0.264583 * ratio
-
-      console.log("[v0] Scaled dimensions:", scaledWidth, "x", scaledHeight)
-
-      // Center the image on the page
-      const x = (pdfWidth - scaledWidth) / 2
-      const y = (pdfHeight - scaledHeight) / 2
-
-      console.log("[v0] Position:", x, ",", y)
-
-      pdf.addImage(imgData, "PNG", x, y, scaledWidth, scaledHeight)
-      console.log("[v0] Image added to PDF, saving...")
-
-      pdf.save(`Glam-Up-With-Feyi-Invoice-${invoiceData.invoiceNumber}.pdf`)
-      console.log("[v0] PDF export completed successfully")
+      printWindow.document.close()
+      console.log("[v0] PDF export initiated with exact preview styling")
     } catch (err) {
       console.error("[v0] PDF export error:", err)
       alert(`PDF export failed: ${err instanceof Error ? err.message : "Unknown error"}`)
     }
+  }
+
+  const drawInvoiceOnCanvas = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    // Fill white background
+    ctx.fillStyle = "#ffffff"
+    ctx.fillRect(0, 0, width, height)
+
+    let y = 40
+    const leftMargin = 40
+    const rightMargin = width - 40
+    const contentWidth = rightMargin - leftMargin
+
+    // Header section - business name on left, invoice box on right
+    ctx.fillStyle = "#78350f"
+    ctx.font = "bold 28px Arial"
+    ctx.fillText("Glam Up With Feyi", leftMargin, y)
+
+    // Invoice box on the right (matching web preview)
+    const boxWidth = 200
+    const boxHeight = 80
+    const boxX = rightMargin - boxWidth
+    const boxY = y - 25
+
+    // Draw invoice box background
+    ctx.fillStyle = "#fef3c7"
+    ctx.fillRect(boxX, boxY, boxWidth, boxHeight)
+
+    // Draw invoice box border
+    ctx.strokeStyle = "#fcd34d"
+    ctx.lineWidth = 1
+    ctx.strokeRect(boxX, boxY, boxWidth, boxHeight)
+
+    // Invoice text in box
+    ctx.fillStyle = "#78350f"
+    ctx.font = "bold 18px Arial"
+    ctx.textAlign = "center"
+    ctx.fillText("INVOICE", boxX + boxWidth / 2, boxY + 25)
+
+    ctx.fillStyle = "#92400e"
+    ctx.font = "bold 16px Arial"
+    ctx.fillText(`#${invoiceData.invoiceNumber}`, boxX + boxWidth / 2, boxY + 50)
+
+    ctx.textAlign = "left"
+    y += 50
+
+    // Business subtitle
+    ctx.fillStyle = "#4b5563"
+    ctx.font = "16px Arial"
+    ctx.fillText("Professional Makeup & Beauty Services", leftMargin, y)
+    y += 30
+
+    // Contact info
+    ctx.font = "12px Arial"
+    ctx.fillText(`📧 ${businessInfo.email}`, leftMargin, y)
+    y += 18
+    ctx.fillText(`📱 ${businessInfo.phone}`, leftMargin, y)
+    y += 18
+    ctx.fillText(`📷 ${businessInfo.instagram}`, leftMargin, y)
+    y += 40
+
+    // Invoice dates on the right
+    ctx.font = "12px Arial"
+    ctx.fillStyle = "#4b5563"
+    ctx.textAlign = "right"
+    ctx.fillText(`Date: ${invoiceData.date}`, rightMargin, y - 20)
+    ctx.fillText(`Due: ${invoiceData.dueDate}`, rightMargin, y)
+    ctx.textAlign = "left"
+    y += 30
+
+    // Client info section (if exists)
+    if (invoiceData.client.name || invoiceData.client.email || invoiceData.client.phone || invoiceData.client.address) {
+      ctx.fillStyle = "#111827"
+      ctx.font = "bold 14px Arial"
+      ctx.fillText("Bill To:", leftMargin, y)
+      y += 20
+
+      // Client info box background
+      const clientBoxHeight = 80
+      ctx.fillStyle = "#f9fafb"
+      ctx.fillRect(leftMargin, y, contentWidth, clientBoxHeight)
+
+      // Client info text
+      ctx.fillStyle = "#111827"
+      ctx.font = "12px Arial"
+      let clientY = y + 15
+
+      if (invoiceData.client.name) {
+        ctx.font = "bold 12px Arial"
+        ctx.fillText(invoiceData.client.name, leftMargin + 15, clientY)
+        clientY += 15
+        ctx.font = "12px Arial"
+      }
+      if (invoiceData.client.email) {
+        ctx.fillStyle = "#4b5563"
+        ctx.fillText(invoiceData.client.email, leftMargin + 15, clientY)
+        clientY += 15
+      }
+      if (invoiceData.client.phone) {
+        ctx.fillText(invoiceData.client.phone, leftMargin + 15, clientY)
+        clientY += 15
+      }
+      if (invoiceData.client.address) {
+        ctx.fillText(invoiceData.client.address, leftMargin + 15, clientY)
+      }
+
+      y += clientBoxHeight + 30
+    }
+
+    // Services section
+    ctx.fillStyle = "#111827"
+    ctx.font = "bold 14px Arial"
+    ctx.fillText("Services", leftMargin, y)
+    y += 30
+
+    // Table header
+    ctx.fillStyle = "#f9fafb"
+    ctx.fillRect(leftMargin, y, contentWidth, 30)
+
+    ctx.fillStyle = "#374151"
+    ctx.font = "bold 12px Arial"
+    ctx.fillText("Description", leftMargin + 10, y + 20)
+    ctx.textAlign = "center"
+    ctx.fillText("Qty", leftMargin + contentWidth * 0.65, y + 20)
+    ctx.textAlign = "right"
+    ctx.fillText("Price", leftMargin + contentWidth * 0.8, y + 20)
+    ctx.fillText("Total", rightMargin - 10, y + 20)
+    ctx.textAlign = "left"
+    y += 30
+
+    // Table border
+    ctx.strokeStyle = "#e5e7eb"
+    ctx.lineWidth = 1
+    ctx.strokeRect(leftMargin, y - 30, contentWidth, 30)
+
+    // Services items
+    ctx.font = "12px Arial"
+    invoiceData.items.forEach((item, index) => {
+      if (item.description) {
+        // Alternating row background
+        if (index % 2 === 1) {
+          ctx.fillStyle = "#f9fafb"
+          ctx.fillRect(leftMargin, y, contentWidth, 25)
+        }
+
+        ctx.fillStyle = "#111827"
+        ctx.fillText(item.description, leftMargin + 10, y + 18)
+
+        ctx.fillStyle = "#4b5563"
+        ctx.textAlign = "center"
+        ctx.fillText(item.quantity.toString(), leftMargin + contentWidth * 0.65, y + 18)
+
+        ctx.textAlign = "right"
+        ctx.fillText(formatNaira(item.price), leftMargin + contentWidth * 0.8, y + 18)
+
+        ctx.fillStyle = "#111827"
+        ctx.font = "bold 12px Arial"
+        ctx.fillText(formatNaira(item.quantity * item.price), rightMargin - 10, y + 18)
+
+        ctx.font = "12px Arial"
+        ctx.textAlign = "left"
+
+        // Row border
+        ctx.strokeStyle = "#f3f4f6"
+        ctx.strokeRect(leftMargin, y, contentWidth, 25)
+
+        y += 25
+      }
+    })
+
+    y += 30
+
+    // Totals section (matching web preview layout)
+    const totalsBoxWidth = 250
+    const totalsBoxX = rightMargin - totalsBoxWidth
+    const totalsBoxHeight = 80
+
+    // Totals box background
+    ctx.fillStyle = "#f9fafb"
+    ctx.fillRect(totalsBoxX, y, totalsBoxWidth, totalsBoxHeight)
+
+    // Totals content
+    ctx.fillStyle = "#374151"
+    ctx.font = "12px Arial"
+    ctx.fillText("Subtotal:", totalsBoxX + 15, y + 20)
+    ctx.textAlign = "right"
+    ctx.fillText(formatNaira(calculateSubtotal()), rightMargin - 15, y + 20)
+
+    // Total line
+    ctx.strokeStyle = "#d1d5db"
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(totalsBoxX + 15, y + 35)
+    ctx.lineTo(rightMargin - 15, y + 35)
+    ctx.stroke()
+
+    ctx.textAlign = "left"
+    ctx.fillStyle = "#111827"
+    ctx.font = "bold 16px Arial"
+    ctx.fillText("Total:", totalsBoxX + 15, y + 55)
+
+    ctx.textAlign = "right"
+    ctx.fillStyle = "#92400e"
+    ctx.fillText(formatNaira(calculateTotal()), rightMargin - 15, y + 55)
+    ctx.textAlign = "left"
+
+    y += totalsBoxHeight + 40
+
+    // Notes section (if exists)
+    if (invoiceData.notes) {
+      ctx.fillStyle = "#111827"
+      ctx.font = "bold 14px Arial"
+      ctx.fillText("Notes:", leftMargin, y)
+      y += 25
+
+      // Notes box background
+      const notesHeight = 60
+      ctx.fillStyle = "#f9fafb"
+      ctx.fillRect(leftMargin, y, contentWidth, notesHeight)
+
+      // Notes text with word wrapping
+      ctx.fillStyle = "#374151"
+      ctx.font = "12px Arial"
+      const words = invoiceData.notes.split(" ")
+      let line = ""
+      let notesY = y + 20
+      const maxWidth = contentWidth - 30
+
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + " "
+        const metrics = ctx.measureText(testLine)
+        if (metrics.width > maxWidth && n > 0) {
+          ctx.fillText(line, leftMargin + 15, notesY)
+          line = words[n] + " "
+          notesY += 15
+        } else {
+          line = testLine
+        }
+      }
+      ctx.fillText(line, leftMargin + 15, notesY)
+      y += notesHeight + 30
+    }
+
+    // Footer
+    y = height - 40
+    ctx.fillStyle = "#6b7280"
+    ctx.font = "10px Arial"
+    ctx.textAlign = "center"
+    ctx.fillText("Thank you for choosing Glam Up With Feyi!", width / 2, y)
+    ctx.textAlign = "left"
   }
 
   const regenerateInvoiceNumber = () => setInvoiceData((prev) => ({ ...prev, invoiceNumber: generateInvoiceNumber() }))
@@ -197,7 +543,9 @@ export default function InvoiceGenerator() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold text-amber-900 mb-2">Glam Up With Feyi</h1>
+          <h1 className="text-5xl font-bold mb-2" style={{ color: "#78350f" }}>
+            Glam Up With Feyi
+          </h1>
           <p className="text-gray-600 text-lg">Invoice Generator</p>
         </div>
 
@@ -206,7 +554,7 @@ export default function InvoiceGenerator() {
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
             <div className="flex items-center justify-between mb-8">
               <h2 className="text-2xl font-bold text-gray-900">Create Invoice</h2>
-              <div className="h-1 w-20 bg-amber-800 rounded" />
+              <div className="h-1 w-20 rounded" style={{ backgroundColor: "#92400e" }} />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2 gap-4 mb-8">
@@ -217,12 +565,14 @@ export default function InvoiceGenerator() {
                     type="text"
                     value={invoiceData.invoiceNumber}
                     onChange={(e) => updateInvoiceData("invoiceNumber", e.target.value)}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
+                    style={{ "--tw-ring-color": "#f59e0b", color: "#92400e" } as any}
                   />
                   <button
                     onClick={regenerateInvoiceNumber}
                     title="Generate new invoice number"
                     className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    style={{ "--tw-border-color": "#92400e" } as any}
                   >
                     ↻
                   </button>
@@ -238,7 +588,8 @@ export default function InvoiceGenerator() {
                   type="date"
                   value={invoiceData.date}
                   onChange={(e) => updateInvoiceData("date", e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
+                  style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
                 />
               </div>
 
@@ -251,7 +602,8 @@ export default function InvoiceGenerator() {
                   type="date"
                   value={invoiceData.dueDate}
                   onChange={(e) => updateInvoiceData("dueDate", e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
+                  style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
                 />
               </div>
             </div>
@@ -269,7 +621,8 @@ export default function InvoiceGenerator() {
                     value={invoiceData.client.name}
                     onChange={(e) => updateClient("name", e.target.value)}
                     placeholder="Enter client name"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
+                    style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
                   />
                 </div>
 
@@ -283,7 +636,8 @@ export default function InvoiceGenerator() {
                     value={invoiceData.client.email}
                     onChange={(e) => updateClient("email", e.target.value)}
                     placeholder="client@example.com"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
+                    style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
                   />
                 </div>
 
@@ -297,7 +651,8 @@ export default function InvoiceGenerator() {
                     value={invoiceData.client.phone}
                     onChange={(e) => updateClient("phone", e.target.value)}
                     placeholder="+234 xxx xxx xxxx"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
+                    style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
                   />
                 </div>
 
@@ -308,7 +663,8 @@ export default function InvoiceGenerator() {
                     value={invoiceData.client.address}
                     onChange={(e) => updateClient("address", e.target.value)}
                     placeholder="Client address"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
+                    style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
                   />
                 </div>
               </div>
@@ -319,7 +675,10 @@ export default function InvoiceGenerator() {
                 <h3 className="text-lg font-bold text-gray-900">Services & Items</h3>
                 <button
                   onClick={addItem}
-                  className="bg-amber-800 hover:bg-amber-900 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm"
+                  className="text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm"
+                  style={{ backgroundColor: "#92400e" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#78350f")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#92400e")}
                 >
                   <Plus className="w-4 h-4" /> Add Item
                 </button>
@@ -338,7 +697,8 @@ export default function InvoiceGenerator() {
                           value={item.description}
                           onChange={(e) => updateItem(index, "description", e.target.value)}
                           placeholder="e.g., Bridal Makeup"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
+                          style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
                         />
                       </div>
 
@@ -350,7 +710,8 @@ export default function InvoiceGenerator() {
                             min={1}
                             value={item.quantity}
                             onChange={(e) => updateItem(index, "quantity", Number.parseInt(e.target.value || "1"))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
+                            style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
                           />
                         </div>
 
@@ -362,7 +723,8 @@ export default function InvoiceGenerator() {
                             step={100}
                             value={item.price}
                             onChange={(e) => updateItem(index, "price", Number.parseFloat(e.target.value || "0"))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
+                            style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
                           />
                         </div>
                       </div>
@@ -395,7 +757,8 @@ export default function InvoiceGenerator() {
                   onChange={(e) => updateInvoiceData("notes", e.target.value)}
                   placeholder="Add any additional notes, terms, or special instructions..."
                   rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 resize-none"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 resize-none"
+                  style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
                 />
               </div>
             </div>
@@ -403,13 +766,19 @@ export default function InvoiceGenerator() {
             <div className="flex flex-col gap-3 pt-6 border-t border-gray-200">
               <button
                 onClick={exportToPDF}
-                className="bg-amber-800 hover:bg-amber-900 text-white px-6 py-3 rounded-lg flex items-center justify-center gap-2 font-semibold transition-colors"
+                className="text-white px-6 py-3 rounded-lg flex items-center justify-center gap-2 font-semibold transition-colors"
+                style={{ backgroundColor: "#92400e" }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#78350f")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#92400e")}
               >
                 <FileText className="w-4 h-4" /> Export as PDF
               </button>
               <button
                 onClick={exportToPNG}
-                className="border-2 border-amber-800 text-amber-800 hover:bg-amber-50 px-6 py-3 rounded-lg flex items-center justify-center gap-2 font-semibold transition-colors"
+                className="border-2 px-6 py-3 rounded-lg flex items-center justify-center gap-2 font-semibold transition-colors"
+                style={{ borderColor: "#92400e", color: "#92400e" }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#fef3c7")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
               >
                 <ImageIcon className="w-4 h-4" /> Export as PNG
               </button>
@@ -425,9 +794,11 @@ export default function InvoiceGenerator() {
 
             <div className="max-h-[800px] overflow-y-auto">
               <div ref={invoiceRef} className="p-6 bg-white">
-                <div className="flex flex-col justify-between items-start mb-8">
-                  <div className="mb-6">
-                    <h1 className="text-3xl font-bold text-amber-900 mb-2">Glam Up With Feyi</h1>
+                <div className="flex justify-between items-start mb-8">
+                  <div>
+                    <h1 className="text-3xl font-bold mb-2" style={{ color: "#78350f" }}>
+                      Glam Up With Feyi
+                    </h1>
                     <p className="text-lg text-gray-600 mb-3">Professional Makeup & Beauty Services</p>
                     <div className="space-y-1 text-gray-500 text-sm">
                       <p className="flex items-center gap-2">
@@ -445,10 +816,17 @@ export default function InvoiceGenerator() {
                     </div>
                   </div>
 
-                  <div className="w-full">
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
-                      <h2 className="text-2xl font-bold text-amber-900 mb-1">INVOICE</h2>
-                      <p className="text-lg font-semibold text-gray-700">#{invoiceData.invoiceNumber}</p>
+                  <div className="text-right">
+                    <div
+                      className="border rounded-lg p-4 mb-4"
+                      style={{ backgroundColor: "#fef3c7", borderColor: "#fcd34d" }}
+                    >
+                      <h2 className="text-2xl font-bold mb-1" style={{ color: "#78350f" }}>
+                        INVOICE
+                      </h2>
+                      <p className="text-xl font-bold" style={{ color: "#92400e" }}>
+                        #{invoiceData.invoiceNumber}
+                      </p>
                     </div>
                     <div className="space-y-1 text-sm text-gray-600">
                       <p>
@@ -527,7 +905,9 @@ export default function InvoiceGenerator() {
                       <div className="border-t border-gray-300 pt-2">
                         <div className="flex justify-between">
                           <span className="text-lg font-bold text-gray-900">Total:</span>
-                          <span className="text-lg font-bold text-amber-800">{formatNaira(calculateTotal())}</span>
+                          <span className="text-lg font-bold" style={{ color: "#92400e" }}>
+                            {formatNaira(calculateTotal())}
+                          </span>
                         </div>
                       </div>
                     </div>
