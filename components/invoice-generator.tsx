@@ -77,21 +77,31 @@ export default function InvoiceGenerator() {
   const exportToPNG = async () => {
     try {
       const html2canvas = (await import("html2canvas")).default
-      if (!invoiceRef.current) return
-      const canvas = await html2canvas(invoiceRef.current, { scale: 2, useCORS: true, backgroundColor: "#ffffff" })
+      if (!invoiceRef.current) {
+        alert("Invoice preview not found")
+        return
+      }
+      const canvas = await html2canvas(invoiceRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        allowTaint: true,
+        foreignObjectRendering: true,
+      })
       const link = document.createElement("a")
       link.download = `Glam-Tales-Invoice-${invoiceData.invoiceNumber}.png`
-      link.href = canvas.toDataURL()
+      link.href = canvas.toDataURL("image/png")
       link.click()
     } catch (err) {
-      alert("PNG export failed. Make sure html2canvas is installed.")
+      console.error("PNG export error:", err)
+      alert("PNG export failed. Please try again.")
     }
   }
 
   const exportToPDF = async () => {
     try {
-      const jspdfModule = await import("jspdf")
-      const { jsPDF } = jspdfModule as any
+      const jsPDFModule = await import("jspdf")
+      const jsPDF = jsPDFModule.jsPDF || jsPDFModule.default
       const pdf = new jsPDF("p", "mm", "a4")
 
       // Header
