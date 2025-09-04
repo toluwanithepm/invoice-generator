@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Plus, Trash2, FileText, ImageIcon, Calendar, User, Mail, Phone, Instagram } from "lucide-react"
 
 type Item = { description: string; quantity: number; price: number }
@@ -11,25 +11,37 @@ const generateInvoiceNumber = () => {
 }
 
 const businessInfo = {
-  name: "Glam Tales",
-  email: "hello@glamtales.ng",
-  phone: "+234 813 456 7890",
-  instagram: "@glamtales_ng",
+  name: "Glam Up With Feyi",
+  email: "feyisaraabodunrin@gmail.com",
+  phone: "+234 813 100 3292",
+  instagram: "@feyi_shara_",
 }
 
 export default function InvoiceGenerator() {
   const invoiceRef = useRef<HTMLDivElement | null>(null)
 
   const [invoiceData, setInvoiceData] = useState({
-    invoiceNumber: generateInvoiceNumber(),
-    date: new Date().toISOString().split("T")[0],
-    dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+    invoiceNumber: "",
+    date: "",
+    dueDate: "",
     client: { name: "", email: "", phone: "", address: "" },
     items: [{ description: "", quantity: 1, price: 0 }] as Item[],
     taxRate: 0,
     notes: "",
-    paymentTerms: "Payment due within 14 days",
+    paymentTerms: "Payment due within 7 days",
   })
+
+  useEffect(() => {
+    const today = new Date().toISOString().split("T")[0]
+    const dueDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+
+    setInvoiceData((prev) => ({
+      ...prev,
+      invoiceNumber: generateInvoiceNumber(),
+      date: today,
+      dueDate: dueDate,
+    }))
+  }, [])
 
   const addItem = () =>
     setInvoiceData((prev) => ({ ...prev, items: [...prev.items, { description: "", quantity: 1, price: 0 }] }))
@@ -381,7 +393,7 @@ export default function InvoiceGenerator() {
           <div ref={invoiceRef} className="p-10 bg-white">
             <div className="flex flex-col lg:flex-row justify-between items-start mb-12">
               <div className="mb-8 lg:mb-0">
-                <h1 className="text-5xl font-bold text-amber-900 mb-4">Glam Tales</h1>
+                <h1 className="text-5xl font-bold text-amber-900 mb-4">Glam Up With Feyi</h1>
                 <p className="text-xl text-gray-600 mb-4">Professional Makeup & Beauty Services</p>
                 <div className="space-y-1 text-gray-500">
                   <p className="flex items-center gap-2">
@@ -485,7 +497,7 @@ export default function InvoiceGenerator() {
             </div>
 
             <div className="mt-16 pt-8 border-t border-gray-200 text-center">
-              <p className="text-gray-500 text-sm">Thank you for choosing Glam Tales!</p>
+              <p className="text-gray-500 text-sm">Thank you for choosing Glam Up with Feyi!</p>
             </div>
           </div>
         </div>
