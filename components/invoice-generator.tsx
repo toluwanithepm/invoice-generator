@@ -85,13 +85,21 @@ export default function InvoiceGenerator() {
         scale: 2,
         useCORS: true,
         backgroundColor: "#ffffff",
-        allowTaint: true,
-        foreignObjectRendering: true,
+        allowTaint: false,
+        foreignObjectRendering: false,
+        logging: false,
+        width: invoiceRef.current.scrollWidth,
+        height: invoiceRef.current.scrollHeight,
+        scrollX: 0,
+        scrollY: 0,
       })
+
       const link = document.createElement("a")
       link.download = `Glam-Tales-Invoice-${invoiceData.invoiceNumber}.png`
-      link.href = canvas.toDataURL("image/png")
+      link.href = canvas.toDataURL("image/png", 1.0)
+      document.body.appendChild(link)
       link.click()
+      document.body.removeChild(link)
     } catch (err) {
       console.error("PNG export error:", err)
       alert("PNG export failed. Please try again.")
@@ -100,88 +108,50 @@ export default function InvoiceGenerator() {
 
   const exportToPDF = async () => {
     try {
+      const html2canvas = (await import("html2canvas")).default
       const jsPDFModule = await import("jspdf")
       const jsPDF = jsPDFModule.jsPDF || jsPDFModule.default
-      const pdf = new jsPDF("p", "mm", "a4")
 
-      // Header
-      pdf.setFontSize(28)
-      pdf.setTextColor(101, 67, 33)
-      pdf.text("Glam Tales", 20, 30)
-
-      pdf.setFontSize(11)
-      pdf.setTextColor(0, 0, 0)
-      pdf.text("Professional Makeup & Beauty Services", 20, 40)
-
-      // Business contact info
-      pdf.setFontSize(9)
-      pdf.setTextColor(107, 114, 128)
-      pdf.text(`Email: ${businessInfo.email}`, 20, 50)
-      pdf.text(`Phone: ${businessInfo.phone}`, 20, 56)
-      pdf.text(`Instagram: ${businessInfo.instagram}`, 20, 62)
-
-      // Invoice details
-      pdf.setFontSize(18)
-      pdf.setTextColor(0, 0, 0)
-      pdf.text(`Invoice #${invoiceData.invoiceNumber}`, 20, 80)
-
-      pdf.setFontSize(10)
-      pdf.setTextColor(107, 114, 128)
-      pdf.text(`Date: ${invoiceData.date}`, 20, 90)
-      pdf.text(`Due Date: ${invoiceData.dueDate}`, 20, 98)
-
-      // Client info
-      pdf.setFontSize(12)
-      pdf.setTextColor(0, 0, 0)
-      pdf.text("Bill To:", 20, 118)
-      pdf.setFontSize(10)
-      let yPos = 128
-      if (invoiceData.client.name) {
-        pdf.text(invoiceData.client.name, 20, yPos)
-        yPos += 8
-      }
-      if (invoiceData.client.email) {
-        pdf.text(invoiceData.client.email, 20, yPos)
-        yPos += 8
-      }
-      if (invoiceData.client.phone) {
-        pdf.text(invoiceData.client.phone, 20, yPos)
-        yPos += 8
-      }
-      if (invoiceData.client.address) {
-        pdf.text(invoiceData.client.address, 20, yPos)
-        yPos += 8
+      if (!invoiceRef.current) {
+        alert("Invoice preview not found")
+        return
       }
 
-      // Items
-      yPos += 15
-      pdf.setFontSize(12)
-      pdf.setTextColor(0, 0, 0)
-      pdf.text("Services:", 20, yPos)
-      yPos += 12
-
-      pdf.setFontSize(10)
-      invoiceData.items.forEach((item) => {
-        if (item.description) {
-          pdf.text(`${item.description} (Qty: ${item.quantity}) - ${formatNaira(item.quantity * item.price)}`, 20, yPos)
-          yPos += 8
-        }
+      const canvas = await html2canvas(invoiceRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        allowTaint: false,
+        foreignObjectRendering: false,
+        logging: false,
+        width: invoiceRef.current.scrollWidth,
+        height: invoiceRef.current.scrollHeight,
+        scrollX: 0,
+        scrollY: 0,
       })
 
-      // Totals
-      yPos += 15
-      pdf.text(`Subtotal: ${formatNaira(calculateSubtotal())}`, 20, yPos)
-      yPos += 8
-      if (invoiceData.taxRate > 0) {
-        pdf.text(`Tax (${invoiceData.taxRate}%): ${formatNaira(calculateTax())}`, 20, yPos)
-        yPos += 8
-      }
-      pdf.setFontSize(12)
-      pdf.text(`Total: ${formatNaira(calculateTotal())}`, 20, yPos)
+      const imgData = canvas.toDataURL("image/png", 1.0)
+      const pdf = new jsPDF("p", "mm", "a4")
 
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      const pdfHeight = pdf.internal.pageSize.getHeight()
+      const imgWidth = canvas.width
+      const imgHeight = canvas.height
+
+      // Calculate scaling to fit the image on the PDF page
+      const ratio = Math.min(pdfWidth / (imgWidth * 0.264583), pdfHeight / (imgHeight * 0.264583))
+      const scaledWidth = imgWidth * 0.264583 * ratio
+      const scaledHeight = imgHeight * 0.264583 * ratio
+
+      // Center the image on the page
+      const x = (pdfWidth - scaledWidth) / 2
+      const y = (pdfHeight - scaledHeight) / 2
+
+      pdf.addImage(imgData, "PNG", x, y, scaledWidth, scaledHeight)
       pdf.save(`Glam-Tales-Invoice-${invoiceData.invoiceNumber}.pdf`)
     } catch (err) {
-      alert("PDF export failed. Make sure jspdf is installed.")
+      console.error("PDF export error:", err)
+      alert("PDF export failed. Please try again.")
     }
   }
 

@@ -7,8 +7,8 @@ import { Suspense } from "react"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "Glam Tales - Invoice Generator",
-  description: "Professional invoice generator for Glam Tales makeup and beauty services",
+  title: "Glam Up with Feyi - Invoice Generator",
+  description: "Professional invoice generator for Glam Up with Feyi makeup and beauty services",
   generator: "v0.app",
 }
 
