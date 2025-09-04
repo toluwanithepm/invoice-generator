@@ -162,7 +162,7 @@ export default function InvoiceGenerator() {
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold text-amber-900 mb-2">Glam Tales</h1>
+          <h1 className="text-5xl font-bold text-amber-900 mb-2">Glam Up With Feyi</h1>
           <p className="text-gray-600 text-lg">Invoice Generator</p>
         </div>
 
