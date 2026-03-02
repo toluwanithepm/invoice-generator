@@ -19,7 +19,10 @@ import {
   AlertCircle,
   X,
   Sparkles,
+  Clock,
+  Download,
 } from "lucide-react"
+import { saveInvoice, getAllInvoices, deleteInvoice, type HistoryEntry } from "@/lib/invoice-history"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -161,12 +164,145 @@ function Toast({
   )
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function timeAgo(ts: number): string {
+  const diff = Date.now() - ts
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return "Just now"
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
+
+// ─── History Drawer ───────────────────────────────────────────────────────────
+
+function HistoryDrawer({
+  entries,
+  onClose,
+  onRedownload,
+  onDelete,
+}: {
+  entries: HistoryEntry[]
+  onClose: () => void
+  onRedownload: (entry: HistoryEntry) => void
+  onDelete: (id: number) => void
+}) {
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/25 z-50 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        className="fixed right-0 top-0 bottom-0 w-[400px] max-w-[100vw] bg-white z-50 flex flex-col"
+        style={{
+          boxShadow: "-8px 0 40px rgba(0,0,0,0.12)",
+          animation: "slideInRight 0.22s cubic-bezier(0.25,0.46,0.45,0.94)",
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 shrink-0">
+          <div>
+            <h2 className="text-sm font-bold text-zinc-900">Invoice History</h2>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              {entries.length} {entries.length === 1 ? "export" : "exports"} stored locally
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-all"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2.5">
+          {entries.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center py-16">
+              <div
+                className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3"
+                style={{ backgroundColor: "#fef3c7" }}
+              >
+                <Clock className="w-5 h-5" style={{ color: C.primary }} />
+              </div>
+              <p className="text-sm font-semibold text-zinc-500">No exports yet</p>
+              <p className="text-xs text-zinc-400 mt-1">
+                Exported invoices will be saved here automatically
+              </p>
+            </div>
+          ) : (
+            entries.map((entry) => (
+              <div
+                key={entry.id}
+                className="bg-white border border-zinc-100 rounded-xl p-4 hover:border-zinc-200 transition-colors"
+              >
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="min-w-0">
+                    <p
+                      className="font-mono text-xs font-bold truncate"
+                      style={{ color: C.primary }}
+                    >
+                      {entry.invoiceNumber}
+                    </p>
+                    <p className="text-sm font-semibold text-zinc-800 mt-0.5 truncate">
+                      {entry.clientName || <span className="text-zinc-400 font-normal italic">No client</span>}
+                    </p>
+                  </div>
+                  <span
+                    className="shrink-0 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full"
+                    style={
+                      entry.fileType === "pdf"
+                        ? { backgroundColor: "#fef3c7", color: C.primary }
+                        : { backgroundColor: "#dbeafe", color: "#1d4ed8" }
+                    }
+                  >
+                    {entry.fileType}
+                  </span>
+                </div>
+
+                <div className="flex items-end justify-between">
+                  <div className="text-xs text-zinc-400 space-y-0.5">
+                    <p>{fmtDate(entry.date)}</p>
+                    <p className="text-sm font-bold" style={{ color: C.dark }}>
+                      {fmt(entry.total)}
+                    </p>
+                    <p className="text-zinc-300">{timeAgo(entry.exportedAt)}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => onRedownload(entry)}
+                      title="Re-download"
+                      className="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-400 hover:text-amber-700 hover:bg-amber-50 transition-all"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => onDelete(entry.id)}
+                      title="Delete from history"
+                      className="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function InvoiceGenerator() {
   const invoiceRef = useRef<HTMLDivElement | null>(null)
   const [isExporting, setIsExporting] = useState<"pdf" | "png" | null>(null)
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
+  const [history, setHistory] = useState<HistoryEntry[]>([])
 
   const [data, setData] = useState<InvoiceData>({
     invoiceNumber: "",
@@ -188,6 +324,16 @@ export default function InvoiceGenerator() {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3500)
   }, [])
+
+  const loadHistory = useCallback(async () => {
+    try {
+      setHistory(await getAllInvoices())
+    } catch {
+      // IndexedDB unavailable (private mode, etc.) — silently skip
+    }
+  }, [])
+
+  useEffect(() => { loadHistory() }, [loadHistory])
 
   // ── Data ops ────────────────────────────────────────────────────────────────
 
@@ -265,6 +411,22 @@ export default function InvoiceGenerator() {
 
       pdf.save(`Invoice-${data.invoiceNumber}.pdf`)
       showToast("Invoice saved as PDF!")
+
+      // Save to history
+      try {
+        await saveInvoice({
+          invoiceNumber: data.invoiceNumber,
+          clientName: data.client.name,
+          date: data.date,
+          dueDate: data.dueDate,
+          total,
+          exportedAt: Date.now(),
+          fileType: "pdf",
+          fileBlob: pdf.output("blob"),
+          invoiceDataJson: JSON.stringify(data),
+        })
+        loadHistory()
+      } catch { /* history save failure is non-fatal */ }
     } catch (err) {
       showToast(`Export failed: ${err instanceof Error ? err.message : "Unknown error"}`, "error")
     } finally {
@@ -288,23 +450,39 @@ export default function InvoiceGenerator() {
         logging: false,
       })
 
-      canvas.toBlob(
-        (blob) => {
-          if (blob) {
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement("a")
-            a.download = `Invoice-${data.invoiceNumber}.png`
-            a.href = url
-            document.body.appendChild(a)
-            a.click()
-            document.body.removeChild(a)
-            URL.revokeObjectURL(url)
-            showToast("Invoice downloaded as PNG!")
-          }
-        },
-        "image/png",
-        1.0,
+      const blob = await new Promise<Blob>((resolve, reject) =>
+        canvas.toBlob(
+          (b) => (b ? resolve(b) : reject(new Error("Canvas to blob failed"))),
+          "image/png",
+          1.0,
+        ),
       )
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.download = `Invoice-${data.invoiceNumber}.png`
+      a.href = url
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      showToast("Invoice downloaded as PNG!")
+
+      // Save to history
+      try {
+        await saveInvoice({
+          invoiceNumber: data.invoiceNumber,
+          clientName: data.client.name,
+          date: data.date,
+          dueDate: data.dueDate,
+          total,
+          exportedAt: Date.now(),
+          fileType: "png",
+          fileBlob: blob,
+          invoiceDataJson: JSON.stringify(data),
+        })
+        loadHistory()
+      } catch { /* history save failure is non-fatal */ }
     } catch (err) {
       showToast(`Export failed: ${err instanceof Error ? err.message : "Unknown error"}`, "error")
     } finally {
@@ -312,11 +490,37 @@ export default function InvoiceGenerator() {
     }
   }
 
+  // ── History actions ─────────────────────────────────────────────────────────
+
+  const redownload = (entry: HistoryEntry) => {
+    const url = URL.createObjectURL(entry.fileBlob)
+    const a = document.createElement("a")
+    a.download = `Invoice-${entry.invoiceNumber}.${entry.fileType}`
+    a.href = url
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    showToast(`Re-downloaded as ${entry.fileType.toUpperCase()}`)
+  }
+
+  const handleDelete = async (id: number) => {
+    try {
+      await deleteInvoice(id)
+      setHistory((h) => h.filter((e) => e.id !== id))
+    } catch {
+      showToast("Failed to delete entry", "error")
+    }
+  }
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <>
-      <style>{`@keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <style>{`
+        @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes slideInRight{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)}}
+      `}</style>
 
       <div className="min-h-screen" style={{ backgroundColor: "#fafaf9" }}>
         {/* ── App Bar ─────────────────────────────────────────────── */}
@@ -337,9 +541,26 @@ export default function InvoiceGenerator() {
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-zinc-400 font-medium">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Live preview</span>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowHistory(true)}
+                className="relative flex items-center gap-1.5 text-xs font-semibold text-zinc-500 px-3 py-1.5 rounded-xl hover:bg-zinc-100 transition-all"
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">History</span>
+                {history.length > 0 && (
+                  <span
+                    className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-black text-white px-1"
+                    style={{ backgroundColor: C.primary }}
+                  >
+                    {history.length}
+                  </span>
+                )}
+              </button>
+              <div className="flex items-center gap-1.5 text-xs text-zinc-400 font-medium">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Live preview</span>
+              </div>
             </div>
           </div>
         </header>
@@ -897,6 +1118,16 @@ export default function InvoiceGenerator() {
       {/* ── Toast ─────────────────────────────────────────────── */}
       {toast && (
         <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+      )}
+
+      {/* ── History Drawer ─────────────────────────────────────── */}
+      {showHistory && (
+        <HistoryDrawer
+          entries={history}
+          onClose={() => setShowHistory(false)}
+          onRedownload={redownload}
+          onDelete={handleDelete}
+        />
       )}
     </>
   )
