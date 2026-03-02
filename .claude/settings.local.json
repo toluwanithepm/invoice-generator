@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc --noEmit)",
+      "Bash(npx next build)",
+      "Bash(npm install html2canvas-pro)",
+      "Bash(npm uninstall html2canvas)",
+      "Bash(npm install html2canvas-pro --legacy-peer-deps)",
+      "Bash(npm uninstall html2canvas --legacy-peer-deps)"
+    ]
+  }
+}

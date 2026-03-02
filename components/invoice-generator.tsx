@@ -1,936 +1,903 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
-import { Plus, Trash2, FileText, ImageIcon, Calendar, User, Mail, Phone, Instagram } from "lucide-react"
+import { useState, useRef, useEffect, useCallback } from "react"
+import {
+  Plus,
+  Trash2,
+  FileText,
+  Image as ImageIcon,
+  Calendar,
+  User,
+  Mail,
+  Phone,
+  Instagram,
+  RefreshCw,
+  MapPin,
+  Hash,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
+  X,
+  Sparkles,
+} from "lucide-react"
 
-type Item = { description: string; quantity: number; price: number }
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const generateInvoiceNumber = () => {
-  const currentNumber = Number.parseInt(localStorage.getItem("lastInvoiceNumber") || "0") + 1
-  localStorage.setItem("lastInvoiceNumber", currentNumber.toString())
-  return `FS-${currentNumber.toString().padStart(6, "0")}`
+type Item = {
+  id: string
+  description: string
+  quantity: number
+  price: number
 }
 
-const businessInfo = {
+type InvoiceData = {
+  invoiceNumber: string
+  date: string
+  dueDate: string
+  client: { name: string; email: string; phone: string; address: string }
+  items: Item[]
+  taxRate: number
+  notes: string
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const BRAND = {
   name: "Glam Up With Feyi",
+  tagline: "Professional Makeup & Beauty Services",
   email: "feyisaraabodunrin@gmail.com",
   phone: "+234 813 100 3292",
   instagram: "@feyi_shara_",
+} as const
+
+const C = {
+  primary: "#92400e",
+  dark: "#78350f",
+  light: "#b45309",
+  accent: "#fef3c7",
+  border: "#fde68a",
+  gold: "#f59e0b",
+} as const
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function genInvoiceNumber() {
+  const n = Number.parseInt(localStorage.getItem("lastInvoiceNumber") || "0") + 1
+  localStorage.setItem("lastInvoiceNumber", n.toString())
+  return `FS-${n.toString().padStart(6, "0")}`
 }
+
+function fmt(amount: number) {
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency: "NGN",
+    minimumFractionDigits: 2,
+  }).format(amount)
+}
+
+function fmtDate(dateStr: string) {
+  if (!dateStr) return "—"
+  try {
+    return new Date(dateStr + "T12:00:00").toLocaleDateString("en-NG", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })
+  } catch {
+    return dateStr
+  }
+}
+
+// ─── Shared input class ───────────────────────────────────────────────────────
+
+const inputCls =
+  "w-full px-3.5 py-2.5 text-sm bg-white border border-zinc-200 rounded-xl text-zinc-900 placeholder-zinc-400 " +
+  "transition-all duration-150 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function Field({
+  label,
+  icon: Icon,
+  children,
+  className = "",
+}: {
+  label: string
+  icon?: React.ComponentType<{ className?: string }>
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div className={`flex flex-col gap-1.5 ${className}`}>
+      <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-zinc-400">
+        {Icon && <Icon className="w-3 h-3" />}
+        {label}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+function SectionHeader({
+  title,
+  action,
+}: {
+  title: string
+  action?: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <h3 className="text-sm font-bold text-zinc-800">{title}</h3>
+      {action}
+    </div>
+  )
+}
+
+function Toast({
+  message,
+  type,
+  onClose,
+}: {
+  message: string
+  type: "success" | "error"
+  onClose: () => void
+}) {
+  return (
+    <div
+      className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border text-sm font-medium
+        ${type === "success" ? "bg-white border-emerald-200 text-emerald-700" : "bg-white border-red-200 text-red-700"}`}
+      style={{ animation: "slideUp 0.25s ease" }}
+    >
+      {type === "success" ? (
+        <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+      ) : (
+        <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+      )}
+      {message}
+      <button onClick={onClose} className="ml-1 opacity-50 hover:opacity-100 transition-opacity">
+        <X className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  )
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function InvoiceGenerator() {
   const invoiceRef = useRef<HTMLDivElement | null>(null)
+  const [isExporting, setIsExporting] = useState<"pdf" | "png" | null>(null)
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
 
-  const [invoiceData, setInvoiceData] = useState({
+  const [data, setData] = useState<InvoiceData>({
     invoiceNumber: "",
     date: "",
     dueDate: "",
     client: { name: "", email: "", phone: "", address: "" },
-    items: [{ description: "", quantity: 1, price: 0 }] as Item[],
+    items: [{ id: "1", description: "", quantity: 1, price: 0 }],
     taxRate: 0,
-    notes: "", // Notes field already exists in state
-    paymentTerms: "Payment due within 7 days",
+    notes: "",
   })
 
   useEffect(() => {
     const today = new Date().toISOString().split("T")[0]
-    const dueDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
-
-    setInvoiceData((prev) => ({
-      ...prev,
-      invoiceNumber: generateInvoiceNumber(),
-      date: today,
-      dueDate: dueDate,
-    }))
+    const due = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+    setData((p) => ({ ...p, invoiceNumber: genInvoiceNumber(), date: today, dueDate: due }))
   }, [])
 
-  const addItem = () =>
-    setInvoiceData((prev) => ({ ...prev, items: [...prev.items, { description: "", quantity: 1, price: 0 }] }))
+  const showToast = useCallback((message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3500)
+  }, [])
 
-  const removeItem = (index: number) => {
-    if (invoiceData.items.length > 1) {
-      setInvoiceData((prev) => ({ ...prev, items: prev.items.filter((_, i) => i !== index) }))
+  // ── Data ops ────────────────────────────────────────────────────────────────
+
+  const addItem = () =>
+    setData((p) => ({
+      ...p,
+      items: [...p.items, { id: Date.now().toString(), description: "", quantity: 1, price: 0 }],
+    }))
+
+  const removeItem = (id: string) => {
+    if (data.items.length > 1)
+      setData((p) => ({ ...p, items: p.items.filter((i) => i.id !== id) }))
+  }
+
+  const updateItem = (id: string, field: keyof Omit<Item, "id">, value: string | number) =>
+    setData((p) => ({
+      ...p,
+      items: p.items.map((i) => (i.id === id ? { ...i, [field]: value } : i)),
+    }))
+
+  const updateClient = (field: string, value: string) =>
+    setData((p) => ({ ...p, client: { ...p.client, [field]: value } }))
+
+  const set = (field: string, value: unknown) =>
+    setData((p) => ({ ...p, [field]: value }))
+
+  // ── Calculations ────────────────────────────────────────────────────────────
+
+  const subtotal = data.items.reduce((s, i) => s + i.quantity * i.price, 0)
+  const tax = subtotal * (data.taxRate / 100)
+  const total = subtotal + tax
+
+  const hasClient =
+    data.client.name || data.client.email || data.client.phone || data.client.address
+
+  const regenerate = () => {
+    set("invoiceNumber", genInvoiceNumber())
+    showToast("New invoice number generated")
+  }
+
+  // ── PDF Export (html2canvas + jsPDF — pixel-perfect) ─────────────────────────
+
+  const exportToPDF = async () => {
+    setIsExporting("pdf")
+    try {
+      if (!invoiceRef.current) throw new Error("Invoice preview not found")
+
+      const html2canvas = (await import("html2canvas-pro")).default
+      const { jsPDF } = await import("jspdf")
+
+      const canvas = await html2canvas(invoiceRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      })
+
+      const imgData = canvas.toDataURL("image/png")
+      const pdf = new jsPDF("p", "mm", "a4")
+
+      const pageW = pdf.internal.pageSize.getWidth()
+      const pageH = pdf.internal.pageSize.getHeight()
+      const margin = 8 // mm
+      const contentW = pageW - 2 * margin
+      const imgH = (canvas.height * contentW) / canvas.width
+
+      if (imgH > pageH - 2 * margin) {
+        const contentH = pageH - 2 * margin
+        const scaledW = (canvas.width * contentH) / canvas.height
+        const xOff = (pageW - scaledW) / 2
+        pdf.addImage(imgData, "PNG", xOff, margin, scaledW, contentH)
+      } else {
+        pdf.addImage(imgData, "PNG", margin, margin, contentW, imgH)
+      }
+
+      pdf.save(`Invoice-${data.invoiceNumber}.pdf`)
+      showToast("Invoice saved as PDF!")
+    } catch (err) {
+      showToast(`Export failed: ${err instanceof Error ? err.message : "Unknown error"}`, "error")
+    } finally {
+      setTimeout(() => setIsExporting(null), 1500)
     }
   }
 
-  const updateItem = (index: number, field: keyof Item, value: string | number) => {
-    setInvoiceData((prev) => ({
-      ...prev,
-      items: prev.items.map((item, i) => (i === index ? { ...item, [field]: value } : item)),
-    }))
-  }
-
-  const updateClient = (field: string, value: string) => {
-    setInvoiceData((prev) => ({ ...prev, client: { ...prev.client, [field]: value } }))
-  }
-
-  const updateInvoiceData = (field: string, value: any) => {
-    setInvoiceData((prev) => ({ ...prev, [field]: value }))
-  }
-
-  const calculateSubtotal = () => invoiceData.items.reduce((sum, item) => sum + item.quantity * item.price, 0)
-  const calculateTax = () => calculateSubtotal() * (invoiceData.taxRate / 100)
-  const calculateTotal = () => calculateSubtotal() + calculateTax()
-
-  const formatNaira = (amount: number) =>
-    new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", minimumFractionDigits: 2 }).format(amount)
+  // ── PNG Export (html2canvas — pixel-perfect) ────────────────────────────────
 
   const exportToPNG = async () => {
+    setIsExporting("png")
     try {
-      console.log("[v0] Starting PNG export using direct canvas drawing...")
+      if (!invoiceRef.current) throw new Error("Invoice preview not found")
 
-      if (!invoiceRef.current) {
-        alert("Invoice preview not found")
-        return
-      }
+      const html2canvas = (await import("html2canvas-pro")).default
 
-      const canvas = document.createElement("canvas")
-      const ctx = canvas.getContext("2d")
-      if (!ctx) {
-        throw new Error("Could not get canvas context")
-      }
+      const canvas = await html2canvas(invoiceRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      })
 
-      // Set canvas size for high quality
-      canvas.width = 800
-      canvas.height = 1100
-
-      drawInvoiceOnCanvas(ctx, canvas.width, canvas.height)
-
-      // Convert to PNG and download
       canvas.toBlob(
         (blob) => {
           if (blob) {
             const url = URL.createObjectURL(blob)
-            const link = document.createElement("a")
-            link.download = `Glam-Up-With-Feyi-Invoice-${invoiceData.invoiceNumber}.png`
-            link.href = url
-            document.body.appendChild(link)
-            link.click()
-            document.body.removeChild(link)
+            const a = document.createElement("a")
+            a.download = `Invoice-${data.invoiceNumber}.png`
+            a.href = url
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
             URL.revokeObjectURL(url)
-            console.log("[v0] PNG export completed successfully")
+            showToast("Invoice downloaded as PNG!")
           }
         },
         "image/png",
         1.0,
       )
     } catch (err) {
-      console.error("[v0] PNG export error:", err)
-      alert(`PNG export failed: ${err instanceof Error ? err.message : "Unknown error"}`)
+      showToast(`Export failed: ${err instanceof Error ? err.message : "Unknown error"}`, "error")
+    } finally {
+      setTimeout(() => setIsExporting(null), 1000)
     }
   }
 
-  const exportToPDF = () => {
-    try {
-      console.log("[v0] Starting PDF export with exact preview styling...")
-
-      // Create a new window with the invoice content
-      const printWindow = window.open("", "_blank")
-      if (!printWindow) {
-        alert("Please allow popups to export PDF")
-        return
-      }
-
-      const invoiceContent = invoiceRef.current?.innerHTML || ""
-
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Invoice ${invoiceData.invoiceNumber}</title>
-          <style>
-            * { 
-              margin: 0; 
-              padding: 0; 
-              box-sizing: border-box; 
-            }
-            body { 
-              font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-              line-height: 1.5; 
-              color: #111827;
-              background: white;
-              font-size: 14px;
-            }
-            @media print {
-              body { margin: 0; }
-              .no-print { display: none !important; }
-            }
-            @page { 
-              margin: 0.75in; 
-              size: A4;
-            }
-            
-            /* Exact styling to match web preview */
-            .p-6 { padding: 1.5rem; }
-            .mb-8 { margin-bottom: 2rem; }
-            .mb-6 { margin-bottom: 1.5rem; }
-            .mb-4 { margin-bottom: 1rem; }
-            .mb-3 { margin-bottom: 0.75rem; }
-            .mb-2 { margin-bottom: 0.5rem; }
-            .mb-1 { margin-bottom: 0.25rem; }
-            .mt-12 { margin-top: 3rem; }
-            .pt-6 { padding-top: 1.5rem; }
-            .pt-2 { padding-top: 0.5rem; }
-            .p-4 { padding: 1rem; }
-            
-            /* Layout */
-            .flex { display: flex; }
-            .justify-between { justify-content: space-between; }
-            .justify-end { justify-content: flex-end; }
-            .items-start { align-items: flex-start; }
-            .items-center { align-items: center; }
-            .text-right { text-align: right; }
-            .text-center { text-align: center; }
-            .gap-2 { gap: 0.5rem; }
-            .space-y-1 > * + * { margin-top: 0.25rem; }
-            .space-y-2 > * + * { margin-top: 0.5rem; }
-            
-            /* Typography */
-            .text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
-            .text-2xl { font-size: 1.5rem; line-height: 2rem; }
-            .text-xl { font-size: 1.25rem; line-height: 1.75rem; }
-            .text-lg { font-size: 1.125rem; line-height: 1.75rem; }
-            .text-base { font-size: 1rem; line-height: 1.5rem; }
-            .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
-            .text-xs { font-size: 0.75rem; line-height: 1rem; }
-            .font-bold { font-weight: 700; }
-            .font-semibold { font-weight: 600; }
-            .font-medium { font-weight: 500; }
-            
-            /* Colors - exact matches */
-            h1 { color: #78350f !important; }
-            h2 { color: #78350f !important; }
-            .text-gray-900 { color: #111827; }
-            .text-gray-700 { color: #374151; }
-            .text-gray-600 { color: #4b5563; }
-            .text-gray-500 { color: #6b7280; }
-            
-            /* Backgrounds and borders */
-            .bg-gray-50 { background-color: #f9fafb; }
-            .bg-white { background-color: white; }
-            .rounded-lg { border-radius: 0.5rem; }
-            .border { border: 1px solid #e5e7eb; }
-            .border-t { border-top: 1px solid #e5e7eb; }
-            .border-b { border-bottom: 1px solid #e5e7eb; }
-            .border-gray-100 { border-color: #f3f4f6; }
-            .border-gray-200 { border-color: #e5e7eb; }
-            .border-gray-300 { border-color: #d1d5db; }
-            
-            /* Invoice specific styling */
-            [style*="background-color: rgb(254, 243, 199)"] { 
-              background-color: #fef3c7 !important; 
-            }
-            [style*="border-color: rgb(252, 211, 77)"] { 
-              border-color: #fcd34d !important; 
-            }
-            [style*="color: rgb(120, 53, 15)"] { 
-              color: #78350f !important; 
-            }
-            [style*="color: rgb(146, 64, 14)"] { 
-              color: #92400e !important; 
-            }
-            
-            /* Table styling */
-            table { 
-              width: 100%; 
-              border-collapse: collapse; 
-              margin-bottom: 1.5rem;
-            }
-            th, td { 
-              padding: 0.75rem; 
-              text-align: left; 
-              border-bottom: 1px solid #f3f4f6; 
-              vertical-align: top;
-            }
-            th { 
-              font-weight: 600; 
-              color: #374151; 
-            }
-            tbody tr:nth-child(odd) {
-              border-bottom: 1px solid #f3f4f6;
-            }
-            
-            /* Max width for totals */
-            .max-w-xs { max-width: 20rem; }
-            .w-full { width: 100%; }
-            
-            /* Icons - hide in print */
-            svg { display: none; }
-            
-            /* Whitespace handling */
-            .whitespace-pre-wrap { white-space: pre-wrap; }
-          </style>
-        </head>
-        <body>
-          <div class="p-6 bg-white">
-            ${invoiceContent}
-          </div>
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.print();
-                setTimeout(function() {
-                  window.close();
-                }, 1000);
-              }, 500);
-            }
-          </script>
-        </body>
-        </html>
-      `)
-
-      printWindow.document.close()
-      console.log("[v0] PDF export initiated with exact preview styling")
-    } catch (err) {
-      console.error("[v0] PDF export error:", err)
-      alert(`PDF export failed: ${err instanceof Error ? err.message : "Unknown error"}`)
-    }
-  }
-
-  const drawInvoiceOnCanvas = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    // Fill white background
-    ctx.fillStyle = "#ffffff"
-    ctx.fillRect(0, 0, width, height)
-
-    let y = 40
-    const leftMargin = 40
-    const rightMargin = width - 40
-    const contentWidth = rightMargin - leftMargin
-
-    // Header section - business name on left, invoice box on right
-    ctx.fillStyle = "#78350f"
-    ctx.font = "bold 28px Arial"
-    ctx.fillText("Glam Up With Feyi", leftMargin, y)
-
-    // Invoice box on the right (matching web preview)
-    const boxWidth = 200
-    const boxHeight = 80
-    const boxX = rightMargin - boxWidth
-    const boxY = y - 25
-
-    // Draw invoice box background
-    ctx.fillStyle = "#fef3c7"
-    ctx.fillRect(boxX, boxY, boxWidth, boxHeight)
-
-    // Draw invoice box border
-    ctx.strokeStyle = "#fcd34d"
-    ctx.lineWidth = 1
-    ctx.strokeRect(boxX, boxY, boxWidth, boxHeight)
-
-    // Invoice text in box
-    ctx.fillStyle = "#78350f"
-    ctx.font = "bold 18px Arial"
-    ctx.textAlign = "center"
-    ctx.fillText("INVOICE", boxX + boxWidth / 2, boxY + 25)
-
-    ctx.fillStyle = "#92400e"
-    ctx.font = "bold 16px Arial"
-    ctx.fillText(`#${invoiceData.invoiceNumber}`, boxX + boxWidth / 2, boxY + 50)
-
-    ctx.textAlign = "left"
-    y += 50
-
-    // Business subtitle
-    ctx.fillStyle = "#4b5563"
-    ctx.font = "16px Arial"
-    ctx.fillText("Professional Makeup & Beauty Services", leftMargin, y)
-    y += 30
-
-    // Contact info
-    ctx.font = "12px Arial"
-    ctx.fillText(`📧 ${businessInfo.email}`, leftMargin, y)
-    y += 18
-    ctx.fillText(`📱 ${businessInfo.phone}`, leftMargin, y)
-    y += 18
-    ctx.fillText(`📷 ${businessInfo.instagram}`, leftMargin, y)
-    y += 40
-
-    // Invoice dates on the right
-    ctx.font = "12px Arial"
-    ctx.fillStyle = "#4b5563"
-    ctx.textAlign = "right"
-    ctx.fillText(`Date: ${invoiceData.date}`, rightMargin, y - 20)
-    ctx.fillText(`Due: ${invoiceData.dueDate}`, rightMargin, y)
-    ctx.textAlign = "left"
-    y += 30
-
-    // Client info section (if exists)
-    if (invoiceData.client.name || invoiceData.client.email || invoiceData.client.phone || invoiceData.client.address) {
-      ctx.fillStyle = "#111827"
-      ctx.font = "bold 14px Arial"
-      ctx.fillText("Bill To:", leftMargin, y)
-      y += 20
-
-      // Client info box background
-      const clientBoxHeight = 80
-      ctx.fillStyle = "#f9fafb"
-      ctx.fillRect(leftMargin, y, contentWidth, clientBoxHeight)
-
-      // Client info text
-      ctx.fillStyle = "#111827"
-      ctx.font = "12px Arial"
-      let clientY = y + 15
-
-      if (invoiceData.client.name) {
-        ctx.font = "bold 12px Arial"
-        ctx.fillText(invoiceData.client.name, leftMargin + 15, clientY)
-        clientY += 15
-        ctx.font = "12px Arial"
-      }
-      if (invoiceData.client.email) {
-        ctx.fillStyle = "#4b5563"
-        ctx.fillText(invoiceData.client.email, leftMargin + 15, clientY)
-        clientY += 15
-      }
-      if (invoiceData.client.phone) {
-        ctx.fillText(invoiceData.client.phone, leftMargin + 15, clientY)
-        clientY += 15
-      }
-      if (invoiceData.client.address) {
-        ctx.fillText(invoiceData.client.address, leftMargin + 15, clientY)
-      }
-
-      y += clientBoxHeight + 30
-    }
-
-    // Services section
-    ctx.fillStyle = "#111827"
-    ctx.font = "bold 14px Arial"
-    ctx.fillText("Services", leftMargin, y)
-    y += 30
-
-    // Table header
-    ctx.fillStyle = "#f9fafb"
-    ctx.fillRect(leftMargin, y, contentWidth, 30)
-
-    ctx.fillStyle = "#374151"
-    ctx.font = "bold 12px Arial"
-    ctx.fillText("Description", leftMargin + 10, y + 20)
-    ctx.textAlign = "center"
-    ctx.fillText("Qty", leftMargin + contentWidth * 0.65, y + 20)
-    ctx.textAlign = "right"
-    ctx.fillText("Price", leftMargin + contentWidth * 0.8, y + 20)
-    ctx.fillText("Total", rightMargin - 10, y + 20)
-    ctx.textAlign = "left"
-    y += 30
-
-    // Table border
-    ctx.strokeStyle = "#e5e7eb"
-    ctx.lineWidth = 1
-    ctx.strokeRect(leftMargin, y - 30, contentWidth, 30)
-
-    // Services items
-    ctx.font = "12px Arial"
-    invoiceData.items.forEach((item, index) => {
-      if (item.description) {
-        // Alternating row background
-        if (index % 2 === 1) {
-          ctx.fillStyle = "#f9fafb"
-          ctx.fillRect(leftMargin, y, contentWidth, 25)
-        }
-
-        ctx.fillStyle = "#111827"
-        ctx.fillText(item.description, leftMargin + 10, y + 18)
-
-        ctx.fillStyle = "#4b5563"
-        ctx.textAlign = "center"
-        ctx.fillText(item.quantity.toString(), leftMargin + contentWidth * 0.65, y + 18)
-
-        ctx.textAlign = "right"
-        ctx.fillText(formatNaira(item.price), leftMargin + contentWidth * 0.8, y + 18)
-
-        ctx.fillStyle = "#111827"
-        ctx.font = "bold 12px Arial"
-        ctx.fillText(formatNaira(item.quantity * item.price), rightMargin - 10, y + 18)
-
-        ctx.font = "12px Arial"
-        ctx.textAlign = "left"
-
-        // Row border
-        ctx.strokeStyle = "#f3f4f6"
-        ctx.strokeRect(leftMargin, y, contentWidth, 25)
-
-        y += 25
-      }
-    })
-
-    y += 30
-
-    // Totals section (matching web preview layout)
-    const totalsBoxWidth = 250
-    const totalsBoxX = rightMargin - totalsBoxWidth
-    const totalsBoxHeight = 80
-
-    // Totals box background
-    ctx.fillStyle = "#f9fafb"
-    ctx.fillRect(totalsBoxX, y, totalsBoxWidth, totalsBoxHeight)
-
-    // Totals content
-    ctx.fillStyle = "#374151"
-    ctx.font = "12px Arial"
-    ctx.fillText("Subtotal:", totalsBoxX + 15, y + 20)
-    ctx.textAlign = "right"
-    ctx.fillText(formatNaira(calculateSubtotal()), rightMargin - 15, y + 20)
-
-    // Total line
-    ctx.strokeStyle = "#d1d5db"
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.moveTo(totalsBoxX + 15, y + 35)
-    ctx.lineTo(rightMargin - 15, y + 35)
-    ctx.stroke()
-
-    ctx.textAlign = "left"
-    ctx.fillStyle = "#111827"
-    ctx.font = "bold 16px Arial"
-    ctx.fillText("Total:", totalsBoxX + 15, y + 55)
-
-    ctx.textAlign = "right"
-    ctx.fillStyle = "#92400e"
-    ctx.fillText(formatNaira(calculateTotal()), rightMargin - 15, y + 55)
-    ctx.textAlign = "left"
-
-    y += totalsBoxHeight + 40
-
-    // Notes section (if exists)
-    if (invoiceData.notes) {
-      ctx.fillStyle = "#111827"
-      ctx.font = "bold 14px Arial"
-      ctx.fillText("Notes:", leftMargin, y)
-      y += 25
-
-      // Notes box background
-      const notesHeight = 60
-      ctx.fillStyle = "#f9fafb"
-      ctx.fillRect(leftMargin, y, contentWidth, notesHeight)
-
-      // Notes text with word wrapping
-      ctx.fillStyle = "#374151"
-      ctx.font = "12px Arial"
-      const words = invoiceData.notes.split(" ")
-      let line = ""
-      let notesY = y + 20
-      const maxWidth = contentWidth - 30
-
-      for (let n = 0; n < words.length; n++) {
-        const testLine = line + words[n] + " "
-        const metrics = ctx.measureText(testLine)
-        if (metrics.width > maxWidth && n > 0) {
-          ctx.fillText(line, leftMargin + 15, notesY)
-          line = words[n] + " "
-          notesY += 15
-        } else {
-          line = testLine
-        }
-      }
-      ctx.fillText(line, leftMargin + 15, notesY)
-      y += notesHeight + 30
-    }
-
-    // Footer
-    y = height - 40
-    ctx.fillStyle = "#6b7280"
-    ctx.font = "10px Arial"
-    ctx.textAlign = "center"
-    ctx.fillText("Thank you for choosing Glam Up With Feyi!", width / 2, y)
-    ctx.textAlign = "left"
-  }
-
-  const regenerateInvoiceNumber = () => setInvoiceData((prev) => ({ ...prev, invoiceNumber: generateInvoiceNumber() }))
+  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold mb-2" style={{ color: "#78350f" }}>
-            Glam Up With Feyi
-          </h1>
-          <p className="text-gray-600 text-lg">Invoice Generator</p>
-        </div>
+    <>
+      <style>{`@keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}`}</style>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-          {/* Invoice Form */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl font-bold text-gray-900">Create Invoice</h2>
-              <div className="h-1 w-20 rounded" style={{ backgroundColor: "#92400e" }} />
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2 gap-4 mb-8">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Invoice Number</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={invoiceData.invoiceNumber}
-                    onChange={(e) => updateInvoiceData("invoiceNumber", e.target.value)}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
-                    style={{ "--tw-ring-color": "#f59e0b", color: "#92400e" } as any}
-                  />
-                  <button
-                    onClick={regenerateInvoiceNumber}
-                    title="Generate new invoice number"
-                    className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-                    style={{ "--tw-border-color": "#92400e" } as any}
-                  >
-                    ↻
-                  </button>
-                </div>
+      <div className="min-h-screen" style={{ backgroundColor: "#fafaf9" }}>
+        {/* ── App Bar ─────────────────────────────────────────────── */}
+        <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-zinc-100">
+          <div className="max-w-[1440px] mx-auto px-5 h-14 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-black shadow-lg"
+                style={{ background: `linear-gradient(135deg, ${C.light}, ${C.dark})` }}
+              >
+                G
               </div>
+              <div className="leading-tight">
+                <span className="text-sm font-bold text-zinc-900">{BRAND.name}</span>
+                <span className="hidden sm:inline text-zinc-400 text-sm font-normal">
+                  {" "}
+                  · Invoice Generator
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-zinc-400 font-medium">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Live preview</span>
+            </div>
+          </div>
+        </header>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  <Calendar className="inline w-4 h-4 mr-2" />
-                  Invoice Date
-                </label>
-                <input
-                  type="date"
-                  value={invoiceData.date}
-                  onChange={(e) => updateInvoiceData("date", e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
-                  style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
+        <main className="max-w-[1440px] mx-auto px-4 sm:px-6 py-8">
+          <div className="grid grid-cols-1 xl:grid-cols-[540px_1fr] gap-8 items-start">
+            {/* ══ FORM PANEL ══════════════════════════════════════════ */}
+            <div className="flex flex-col gap-4">
+              {/* Invoice Details */}
+              <section className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
+                <SectionHeader title="Invoice Details" />
+                <div className="mt-5 grid grid-cols-2 gap-4">
+                  <Field label="Invoice Number" icon={Hash} className="col-span-2">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={data.invoiceNumber}
+                        onChange={(e) => set("invoiceNumber", e.target.value)}
+                        className={`${inputCls} font-mono text-amber-800 font-bold`}
+                      />
+                      <button
+                        onClick={regenerate}
+                        title="Generate new number"
+                        className="shrink-0 w-10 h-10 flex items-center justify-center border border-zinc-200 rounded-xl text-zinc-400 hover:border-amber-400 hover:text-amber-600 hover:bg-amber-50 transition-all"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </Field>
+
+                  <Field label="Issue Date" icon={Calendar}>
+                    <input
+                      type="date"
+                      value={data.date}
+                      onChange={(e) => set("date", e.target.value)}
+                      className={inputCls}
+                    />
+                  </Field>
+
+                  <Field label="Due Date" icon={Calendar}>
+                    <input
+                      type="date"
+                      value={data.dueDate}
+                      onChange={(e) => set("dueDate", e.target.value)}
+                      className={inputCls}
+                    />
+                  </Field>
+                </div>
+              </section>
+
+              {/* Client Information */}
+              <section className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
+                <SectionHeader title="Client Information" />
+                <div className="mt-5 grid grid-cols-1 gap-3">
+                  <Field label="Client Name" icon={User}>
+                    <input
+                      type="text"
+                      value={data.client.name}
+                      onChange={(e) => updateClient("name", e.target.value)}
+                      placeholder="e.g., Adaeze Okonkwo"
+                      className={inputCls}
+                    />
+                  </Field>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Email" icon={Mail}>
+                      <input
+                        type="email"
+                        value={data.client.email}
+                        onChange={(e) => updateClient("email", e.target.value)}
+                        placeholder="client@email.com"
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Phone" icon={Phone}>
+                      <input
+                        type="tel"
+                        value={data.client.phone}
+                        onChange={(e) => updateClient("phone", e.target.value)}
+                        placeholder="+234 xxx xxx xxxx"
+                        className={inputCls}
+                      />
+                    </Field>
+                  </div>
+
+                  <Field label="Address" icon={MapPin}>
+                    <input
+                      type="text"
+                      value={data.client.address}
+                      onChange={(e) => updateClient("address", e.target.value)}
+                      placeholder="Client address (optional)"
+                      className={inputCls}
+                    />
+                  </Field>
+                </div>
+              </section>
+
+              {/* Services & Items */}
+              <section className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
+                <SectionHeader
+                  title="Services & Items"
+                  action={
+                    <button
+                      onClick={addItem}
+                      className="flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-xl text-white transition-all active:scale-95 shadow-sm"
+                      style={{ backgroundColor: C.primary }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = C.dark)}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = C.primary)}
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Service
+                    </button>
+                  }
                 />
-              </div>
 
-              <div className="lg:col-span-2 xl:col-span-1 2xl:col-span-2">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  <Calendar className="inline w-4 h-4 mr-2" />
-                  Due Date
-                </label>
-                <input
-                  type="date"
-                  value={invoiceData.dueDate}
-                  onChange={(e) => updateInvoiceData("dueDate", e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
-                  style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
-                />
-              </div>
-            </div>
-
-            <div className="mb-8">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Client Information</h3>
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    <User className="inline w-4 h-4 mr-2" />
-                    Client Name
-                  </label>
-                  <input
-                    type="text"
-                    value={invoiceData.client.name}
-                    onChange={(e) => updateClient("name", e.target.value)}
-                    placeholder="Enter client name"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
-                    style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    <Mail className="inline w-4 h-4 mr-2" />
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    value={invoiceData.client.email}
-                    onChange={(e) => updateClient("email", e.target.value)}
-                    placeholder="client@example.com"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
-                    style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    <Phone className="inline w-4 h-4 mr-2" />
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    value={invoiceData.client.phone}
-                    onChange={(e) => updateClient("phone", e.target.value)}
-                    placeholder="+234 xxx xxx xxxx"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
-                    style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Address</label>
-                  <input
-                    type="text"
-                    value={invoiceData.client.address}
-                    onChange={(e) => updateClient("address", e.target.value)}
-                    placeholder="Client address"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
-                    style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="mb-8">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-gray-900">Services & Items</h3>
-                <button
-                  onClick={addItem}
-                  className="text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm"
-                  style={{ backgroundColor: "#92400e" }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#78350f")}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#92400e")}
-                >
-                  <Plus className="w-4 h-4" /> Add Item
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {invoiceData.items.map((item, index) => (
-                  <div key={index} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Service/Item Description
-                        </label>
-                        <input
-                          type="text"
-                          value={item.description}
-                          onChange={(e) => updateItem(index, "description", e.target.value)}
-                          placeholder="e.g., Bridal Makeup"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
-                          style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
-                        />
+                <div className="mt-5 flex flex-col gap-3">
+                  {data.items.map((item, idx) => (
+                    <div
+                      key={item.id}
+                      className="group relative border rounded-xl p-4 transition-all duration-200"
+                      style={{
+                        backgroundColor: "#fafafa",
+                        borderColor: "#f0f0f0",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = "#fde68a"
+                        e.currentTarget.style.backgroundColor = "#fffdf5"
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = "#f0f0f0"
+                        e.currentTarget.style.backgroundColor = "#fafafa"
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-zinc-300 tracking-widest">
+                          {String(idx + 1).padStart(2, "0")}
+                        </span>
+                        {data.items.length > 1 && (
+                          <button
+                            onClick={() => removeItem(item.id)}
+                            className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-300 hover:text-red-400 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Quantity</label>
+                      <input
+                        type="text"
+                        value={item.description}
+                        onChange={(e) => updateItem(item.id, "description", e.target.value)}
+                        placeholder="Service or item description"
+                        className={`${inputCls} mb-3`}
+                      />
+
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                            Qty
+                          </span>
                           <input
                             type="number"
                             min={1}
                             value={item.quantity}
-                            onChange={(e) => updateItem(index, "quantity", Number.parseInt(e.target.value || "1"))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
-                            style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
+                            onChange={(e) =>
+                              updateItem(item.id, "quantity", parseInt(e.target.value) || 1)
+                            }
+                            className={`${inputCls} text-center`}
                           />
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Price (₦)</label>
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                            Unit Price (₦)
+                          </span>
                           <input
                             type="number"
                             min={0}
                             step={100}
                             value={item.price}
-                            onChange={(e) => updateItem(index, "price", Number.parseFloat(e.target.value || "0"))}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2"
-                            style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
+                            onChange={(e) =>
+                              updateItem(item.id, "price", parseFloat(e.target.value) || 0)
+                            }
+                            className={inputCls}
                           />
                         </div>
-                      </div>
 
-                      <div className="flex justify-between items-center">
-                        <div className="text-lg font-bold text-gray-900">
-                          Total: {formatNaira(item.quantity * item.price)}
-                        </div>
-                        {invoiceData.items.length > 1 && (
-                          <button
-                            onClick={() => removeItem(index)}
-                            className="text-red-500 hover:text-red-700 p-2 transition-colors"
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                            Total
+                          </span>
+                          <div
+                            className="h-10 flex items-center px-3.5 rounded-xl text-sm font-bold border"
+                            style={{
+                              backgroundColor: C.accent,
+                              borderColor: C.border,
+                              color: C.dark,
+                            }}
                           >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
+                            {fmt(item.quantity * item.price)}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mb-8">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Additional Notes</h3>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Notes</label>
-                <textarea
-                  value={invoiceData.notes}
-                  onChange={(e) => updateInvoiceData("notes", e.target.value)}
-                  placeholder="Add any additional notes, terms, or special instructions..."
-                  rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 resize-none"
-                  style={{ "--tw-ring-color": "#f59e0b", "--tw-border-color": "#f59e0b" } as any}
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3 pt-6 border-t border-gray-200">
-              <button
-                onClick={exportToPDF}
-                className="text-white px-6 py-3 rounded-lg flex items-center justify-center gap-2 font-semibold transition-colors"
-                style={{ backgroundColor: "#92400e" }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#78350f")}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#92400e")}
-              >
-                <FileText className="w-4 h-4" /> Export as PDF
-              </button>
-              <button
-                onClick={exportToPNG}
-                className="border-2 px-6 py-3 rounded-lg flex items-center justify-center gap-2 font-semibold transition-colors"
-                style={{ borderColor: "#92400e", color: "#92400e" }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#fef3c7")}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-              >
-                <ImageIcon className="w-4 h-4" /> Export as PNG
-              </button>
-            </div>
-          </div>
-
-          {/* Invoice Preview */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="bg-gray-900 text-white px-6 py-4">
-              <h2 className="text-xl font-bold">Invoice Preview</h2>
-              <p className="text-gray-300 mt-1 text-sm">Preview your invoice before exporting</p>
-            </div>
-
-            <div className="max-h-[800px] overflow-y-auto">
-              <div ref={invoiceRef} className="p-6 bg-white">
-                <div className="flex justify-between items-start mb-8">
-                  <div>
-                    <h1 className="text-3xl font-bold mb-2" style={{ color: "#78350f" }}>
-                      Glam Up With Feyi
-                    </h1>
-                    <p className="text-lg text-gray-600 mb-3">Professional Makeup & Beauty Services</p>
-                    <div className="space-y-1 text-gray-500 text-sm">
-                      <p className="flex items-center gap-2">
-                        <Mail className="w-3 h-3" />
-                        {businessInfo.email}
-                      </p>
-                      <p className="flex items-center gap-2">
-                        <Phone className="w-3 h-3" />
-                        {businessInfo.phone}
-                      </p>
-                      <p className="flex items-center gap-2">
-                        <Instagram className="w-3 h-3" />
-                        {businessInfo.instagram}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <div
-                      className="border rounded-lg p-4 mb-4"
-                      style={{ backgroundColor: "#fef3c7", borderColor: "#fcd34d" }}
-                    >
-                      <h2 className="text-2xl font-bold mb-1" style={{ color: "#78350f" }}>
-                        INVOICE
-                      </h2>
-                      <p className="text-xl font-bold" style={{ color: "#92400e" }}>
-                        #{invoiceData.invoiceNumber}
-                      </p>
-                    </div>
-                    <div className="space-y-1 text-sm text-gray-600">
-                      <p>
-                        <span className="font-medium">Date:</span> {invoiceData.date}
-                      </p>
-                      <p>
-                        <span className="font-medium">Due:</span> {invoiceData.dueDate}
-                      </p>
-                    </div>
-                  </div>
+                  ))}
                 </div>
 
-                {(invoiceData.client.name ||
-                  invoiceData.client.email ||
-                  invoiceData.client.phone ||
-                  invoiceData.client.address) && (
-                  <div className="mb-8">
-                    <h3 className="text-base font-bold text-gray-900 mb-3">Bill To:</h3>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      {invoiceData.client.name && (
-                        <p className="font-semibold text-gray-900 text-sm">{invoiceData.client.name}</p>
-                      )}
-                      {invoiceData.client.email && <p className="text-gray-600 text-sm">{invoiceData.client.email}</p>}
-                      {invoiceData.client.phone && <p className="text-gray-600 text-sm">{invoiceData.client.phone}</p>}
-                      {invoiceData.client.address && (
-                        <p className="text-gray-600 text-sm">{invoiceData.client.address}</p>
-                      )}
+                {/* Tax Rate */}
+                <div className="mt-5 pt-5 border-t border-zinc-100">
+                  <Field label="Tax Rate">
+                    <div className="flex items-center gap-4 mt-1">
+                      <input
+                        type="range"
+                        min={0}
+                        max={25}
+                        step={0.5}
+                        value={data.taxRate}
+                        onChange={(e) => set("taxRate", parseFloat(e.target.value))}
+                        className="flex-1"
+                      />
+                      <div
+                        className="shrink-0 w-16 h-10 flex items-center justify-center border rounded-xl text-sm font-bold"
+                        style={{
+                          borderColor: C.border,
+                          backgroundColor: C.accent,
+                          color: C.dark,
+                        }}
+                      >
+                        {data.taxRate}%
+                      </div>
                     </div>
-                  </div>
-                )}
+                  </Field>
+                </div>
+              </section>
 
-                <div className="mb-8">
-                  <h3 className="text-base font-bold text-gray-900 mb-4">Services</h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-200">
-                          <th className="text-left py-2 font-semibold text-gray-700">Description</th>
-                          <th className="text-center py-2 font-semibold text-gray-700">Qty</th>
-                          <th className="text-right py-2 font-semibold text-gray-700">Price</th>
-                          <th className="text-right py-2 font-semibold text-gray-700">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {invoiceData.items.map(
-                          (item, index) =>
-                            item.description && (
-                              <tr key={index} className="border-b border-gray-100">
-                                <td className="py-3 text-gray-900">{item.description}</td>
-                                <td className="py-3 text-center text-gray-600">{item.quantity}</td>
-                                <td className="py-3 text-right text-gray-600">{formatNaira(item.price)}</td>
-                                <td className="py-3 text-right font-semibold text-gray-900">
-                                  {formatNaira(item.quantity * item.price)}
+              {/* Summary strip */}
+              <div
+                className="rounded-2xl overflow-hidden border"
+                style={{
+                  background: `linear-gradient(135deg, ${C.accent}, #fde68a)`,
+                  borderColor: C.border,
+                }}
+              >
+                <div className="px-6 py-4 flex items-center justify-between gap-4">
+                  <div className="flex gap-6">
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">
+                        Subtotal
+                      </div>
+                      <div className="text-sm font-bold text-amber-900 mt-0.5">{fmt(subtotal)}</div>
+                    </div>
+                    {data.taxRate > 0 && (
+                      <div>
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">
+                          Tax ({data.taxRate}%)
+                        </div>
+                        <div className="text-sm font-bold text-amber-900 mt-0.5">{fmt(tax)}</div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">
+                      Total Due
+                    </div>
+                    <div className="text-2xl font-black text-amber-900 mt-0.5">{fmt(total)}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <section className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
+                <SectionHeader title="Notes & Terms" />
+                <div className="mt-5">
+                  <textarea
+                    value={data.notes}
+                    onChange={(e) => set("notes", e.target.value)}
+                    placeholder="Payment terms, special instructions, or a personal thank-you message..."
+                    rows={4}
+                    className={`${inputCls} resize-none`}
+                  />
+                  <div className="mt-1.5 flex justify-end">
+                    <span className="text-xs text-zinc-300">{data.notes.length} chars</span>
+                  </div>
+                </div>
+              </section>
+
+              {/* Export Buttons */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={exportToPDF}
+                  disabled={!!isExporting}
+                  className="flex items-center justify-center gap-2.5 h-12 rounded-2xl font-bold text-sm text-white shadow-lg transition-all active:scale-[0.98] disabled:opacity-60"
+                  style={{
+                    background: `linear-gradient(135deg, ${C.light}, ${C.dark})`,
+                    boxShadow: `0 6px 20px ${C.primary}40`,
+                  }}
+                >
+                  {isExporting === "pdf" ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <FileText className="w-4 h-4" />
+                  )}
+                  Export PDF
+                </button>
+
+                <button
+                  onClick={exportToPNG}
+                  disabled={!!isExporting}
+                  className="flex items-center justify-center gap-2.5 h-12 rounded-2xl font-bold text-sm border-2 transition-all active:scale-[0.98] disabled:opacity-60"
+                  style={{ borderColor: C.primary, color: C.primary }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = C.accent)}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                >
+                  {isExporting === "png" ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ImageIcon className="w-4 h-4" />
+                  )}
+                  Export PNG
+                </button>
+              </div>
+            </div>
+
+            {/* ══ PREVIEW PANEL ═══════════════════════════════════════ */}
+            <div className="xl:sticky xl:top-20">
+              {/* Preview label */}
+              <div className="mb-3 flex items-center justify-between px-1">
+                <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">
+                  Live Preview
+                </p>
+                <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Auto-updating
+                </span>
+              </div>
+
+              {/* Paper container */}
+              <div
+                className="rounded-2xl p-5 overflow-auto"
+                style={{
+                  backgroundColor: "#e8e8e8",
+                  maxHeight: "calc(100vh - 110px)",
+                  backgroundImage:
+                    "radial-gradient(circle at 1px 1px, rgba(0,0,0,0.04) 1px, transparent 0)",
+                  backgroundSize: "24px 24px",
+                }}
+              >
+                {/* Invoice document */}
+                <div
+                  ref={invoiceRef}
+                  className="bg-white relative overflow-hidden"
+                  style={{
+                    minWidth: 560,
+                    boxShadow:
+                      "0 24px 64px rgba(0,0,0,0.14), 0 8px 20px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.06)",
+                    borderRadius: 3,
+                  }}
+                >
+                  {/* Left accent bar */}
+                  <div
+                    className="absolute left-0 top-0 bottom-0 w-1.5"
+                    style={{ backgroundColor: C.primary }}
+                  />
+
+                  <div className="pl-8 pr-8 pt-10 pb-10">
+                    {/* ── Header ── */}
+                    <div className="flex items-start justify-between mb-8">
+                      <div>
+                        <h1
+                          className="text-2xl font-black tracking-tight mb-1"
+                          style={{ color: C.dark }}
+                        >
+                          {BRAND.name}
+                        </h1>
+                        <p className="text-sm text-zinc-500 mb-3">{BRAND.tagline}</p>
+                        <div className="space-y-1">
+                          <p className="flex items-center gap-2 text-xs text-zinc-400">
+                            <Mail className="w-3 h-3 shrink-0" />
+                            {BRAND.email}
+                          </p>
+                          <p className="flex items-center gap-2 text-xs text-zinc-400">
+                            <Phone className="w-3 h-3 shrink-0" />
+                            {BRAND.phone}
+                          </p>
+                          <p className="flex items-center gap-2 text-xs text-zinc-400">
+                            <Instagram className="w-3 h-3 shrink-0" />
+                            {BRAND.instagram}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <div
+                          className="inline-block border rounded-xl px-5 py-3 mb-3"
+                          style={{
+                            backgroundColor: C.accent,
+                            borderColor: C.border,
+                          }}
+                        >
+                          <div
+                            className="text-xl font-black tracking-tight"
+                            style={{ color: C.dark }}
+                          >
+                            INVOICE
+                          </div>
+                          <div className="text-sm font-bold mt-0.5" style={{ color: C.primary }}>
+                            #{data.invoiceNumber}
+                          </div>
+                        </div>
+                        <div className="space-y-1 text-xs text-zinc-500">
+                          <div className="flex items-center justify-end gap-2">
+                            <span className="text-zinc-400">Issued</span>
+                            <span className="font-semibold text-zinc-700">{fmtDate(data.date)}</span>
+                          </div>
+                          <div className="flex items-center justify-end gap-2">
+                            <span className="text-zinc-400">Due</span>
+                            <span className="font-semibold text-zinc-700">
+                              {fmtDate(data.dueDate)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── Divider ── */}
+                    <div className="border-t border-zinc-100 mb-8" />
+
+                    {/* ── Bill To ── */}
+                    {hasClient && (
+                      <div className="mb-8">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-2">
+                          Bill To
+                        </p>
+                        <div className="bg-zinc-50 rounded-xl p-4 border border-zinc-100">
+                          {data.client.name && (
+                            <p className="font-bold text-zinc-900 text-sm">{data.client.name}</p>
+                          )}
+                          {data.client.email && (
+                            <p className="text-zinc-500 text-xs mt-0.5">{data.client.email}</p>
+                          )}
+                          {data.client.phone && (
+                            <p className="text-zinc-500 text-xs">{data.client.phone}</p>
+                          )}
+                          {data.client.address && (
+                            <p className="text-zinc-500 text-xs">{data.client.address}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Services Table ── */}
+                    <div className="mb-8">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-3">
+                        Services
+                      </p>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b-2 border-zinc-100">
+                            <th className="text-left pb-2.5 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                              Description
+                            </th>
+                            <th className="text-center pb-2.5 text-[10px] font-bold text-zinc-400 uppercase tracking-widest w-12">
+                              Qty
+                            </th>
+                            <th className="text-right pb-2.5 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                              Unit Price
+                            </th>
+                            <th className="text-right pb-2.5 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                              Amount
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.items.map((item) =>
+                            item.description ? (
+                              <tr
+                                key={item.id}
+                                className="border-b border-zinc-50 last:border-zinc-200"
+                              >
+                                <td className="py-3 text-zinc-800 font-medium">
+                                  {item.description}
+                                </td>
+                                <td className="py-3 text-center text-zinc-500">{item.quantity}</td>
+                                <td className="py-3 text-right text-zinc-500">
+                                  {fmt(item.price)}
+                                </td>
+                                <td className="py-3 text-right font-bold text-zinc-900">
+                                  {fmt(item.quantity * item.price)}
                                 </td>
                               </tr>
-                            ),
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                            ) : null,
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
 
-                <div className="flex justify-end mb-8">
-                  <div className="w-full max-w-xs">
-                    <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
-                      <div className="flex justify-between text-gray-700">
-                        <span className="font-medium">Subtotal:</span>
-                        <span className="font-medium">{formatNaira(calculateSubtotal())}</span>
-                      </div>
-                      {invoiceData.taxRate > 0 && (
-                        <div className="flex justify-between text-gray-700">
-                          <span className="font-medium">Tax ({invoiceData.taxRate}%):</span>
-                          <span className="font-medium">{formatNaira(calculateTax())}</span>
+                    {/* ── Totals ── */}
+                    <div className="flex justify-end mb-8">
+                      <div className="w-64">
+                        <div className="space-y-2 text-sm pb-3 border-b border-zinc-200">
+                          <div className="flex justify-between text-zinc-500">
+                            <span>Subtotal</span>
+                            <span className="font-medium text-zinc-700">{fmt(subtotal)}</span>
+                          </div>
+                          {data.taxRate > 0 && (
+                            <div className="flex justify-between text-zinc-500">
+                              <span>Tax ({data.taxRate}%)</span>
+                              <span className="font-medium text-zinc-700">{fmt(tax)}</span>
+                            </div>
+                          )}
                         </div>
-                      )}
-                      <div className="border-t border-gray-300 pt-2">
-                        <div className="flex justify-between">
-                          <span className="text-lg font-bold text-gray-900">Total:</span>
-                          <span className="text-lg font-bold" style={{ color: "#92400e" }}>
-                            {formatNaira(calculateTotal())}
+                        <div className="flex justify-between items-center pt-3">
+                          <span className="font-black text-zinc-900 text-base">Total</span>
+                          <span
+                            className="text-lg font-black"
+                            style={{ color: C.primary }}
+                          >
+                            {fmt(total)}
                           </span>
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                {invoiceData.notes && (
-                  <div className="mb-8">
-                    <h3 className="text-base font-bold text-gray-900 mb-3">Notes:</h3>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <p className="text-gray-700 text-sm whitespace-pre-wrap">{invoiceData.notes}</p>
+                    {/* ── Notes ── */}
+                    {data.notes && (
+                      <div className="mb-8 border-t border-zinc-100 pt-6">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-2">
+                          Notes
+                        </p>
+                        <p className="text-xs text-zinc-600 leading-relaxed whitespace-pre-wrap">
+                          {data.notes}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* ── Footer ── */}
+                    <div className="border-t border-zinc-100 pt-6 flex items-center justify-between">
+                      <p className="text-xs text-zinc-400">
+                        Thank you for choosing {BRAND.name}!
+                      </p>
+                      <div
+                        className="w-6 h-6 rounded-md flex items-center justify-center text-white text-[10px] font-black"
+                        style={{ backgroundColor: C.primary }}
+                      >
+                        G
+                      </div>
                     </div>
                   </div>
-                )}
-
-                <div className="mt-12 pt-6 border-t border-gray-200 text-center">
-                  <p className="text-gray-500 text-xs">Thank you for choosing Glam Up With Feyi!</p>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        </main>
       </div>
-    </div>
+
+      {/* ── Toast ─────────────────────────────────────────────── */}
+      {toast && (
+        <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+      )}
+    </>
   )
 }
